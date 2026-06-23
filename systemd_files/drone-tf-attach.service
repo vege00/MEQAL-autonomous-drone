@@ -1,0 +1,19 @@
+[Unit]
+Description=ROS2 joining drone-tf to fast_lio body tf
+After=drone-state-publisher.service
+
+
+[Service]
+Type=simple
+User=drone008
+ExecStartPre=/bin/sleep 5
+ExecStart=/bin/bash -c "\
+  export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
+  source /opt/ros/humble/setup.bash && \
+  source /home/drone008/ws_ros2_mavsdk/install/setup.bash && \
+  source /home/drone008/ws_livox_drivers/install/setup.bash && \
+  ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 body base_link"
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

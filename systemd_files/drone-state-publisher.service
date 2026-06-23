@@ -1,0 +1,14 @@
+[Unit]
+Description=ROS2 Robot State Publisher
+After=network.target
+
+[Service]
+Type=simple
+User=drone008
+Environment=HOME=/home/drone008
+ExecStart=/home/drone008/scripts/start_state_publisher.sh
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
