@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<robot name="drone-008">
+    <link name="base_link">
+    </link>
+ 
+    
+
+    <link name="livox_frame">
+    </link> 
+    <joint name="lidar_attach" type="fixed">
+        <parent link="base_link"/>
+        <child link="livox_frame"/>
+        <origin xyz="0.10 0.0 -0.12 " rpy="0 0.7854 0"/>
+    </joint>
+
+    
+    <link name="fr_propeller">
+    </link>
+    <joint name="fr_arm" type="fixed">
+        <parent link="base_link"/>
+        <child link="fr_propeller"/>
+        <origin xyz="0.25 -0.25 0.0" rpy="0 0 0"/>
+    </joint>
+    
+
+
+    <link name="fl_propeller">
+    </link>
+    <joint name="fl_arm" type="fixed">
+        <parent link="base_link"/>
+        <child link="fl_propeller"/>
+        <origin xyz="0.25 0.25 0.0" rpy="0 0 0"/>
+    </joint>
+
+
+    <link name="br_propeller">
+    </link>
+    <joint name="br_arm" type="fixed">
+        <parent link="base_link"/>
+        <child link="br_propeller"/>
+        <origin xyz="-0.25 -0.25 0.0" rpy="0 0 0"/>
+    </joint>
+
+
+    <link name="bl_propeller">
+    </link>
+    <joint name="bl_arm" type="fixed">
+        <parent link="base_link"/>
+        <child link="bl_propeller"/>
+        <origin xyz="-0.25 0.25 0.0" rpy="0 0 0"/>
+    </joint>
+</robot>
