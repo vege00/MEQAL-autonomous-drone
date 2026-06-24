@@ -216,3 +216,29 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ROS2 / Colcon
+install/
+log/
+
+# Rosbag2
+*.db3
+*.db3-shm
+*.db3-wal
+*.bag
+*.bag.active
+
+# C++ / CMake
+*.o
+*.a
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# FAST-LIO maps / PCD output
+*.pcd
+/PCD/
+/map/
+
+# Jetson
+*.img
