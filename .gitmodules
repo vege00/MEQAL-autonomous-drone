@@ -1,6 +1,7 @@
-[submodule "src/FAST_LIO"]
-	path = src/FAST_LIO
-	url = https://github.com/hku-mars/FAST_LIO
 [submodule "src/livox_ros_driver2"]
 	path = src/livox_ros_driver2
 	url = https://github.com/Livox-SDK/livox_ros_driver2
+[submodule "src/fast_lio"]
+	path = src/fast_lio
+	url = https://github.com/hku-mars/FAST_LIO.git
+	branch = ROS2
