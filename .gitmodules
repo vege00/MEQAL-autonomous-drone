@@ -5,3 +5,10 @@
 	path = src/fast_lio
 	url = https://github.com/hku-mars/FAST_LIO.git
 	branch = ROS2
+[submodule "src/mavlink"]
+	path = src/mavlink
+	url = https://github.com/mavlink/mavlink.git
+[submodule "src/mavros"]
+	path = src/mavros
+	url = https://github.com/mavlink/mavros.git
+	branch = ros2
