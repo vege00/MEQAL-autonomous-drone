@@ -1,0 +1,18 @@
+[Unit]
+Description=ROS2 Fast-LIO to MAVROS bridge
+After=drone-fast_lio.service drone-mavros.service
+Requires=drone-fast_lio.service drone-mavros.service
+
+[Service]
+Type=simple
+User=drone008
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash -c "\
+  export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
+  source /opt/ros/humble/setup.bash && \
+  source /home/drone008/ws_auto_drone_008/install/setup.bash && \
+  ros2 run telemetry_publisher fastlio_bridge_node"
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

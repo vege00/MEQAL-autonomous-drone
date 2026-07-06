@@ -1,17 +1,17 @@
 [Unit]
 Description=ROS2 Fast-LIO
-After=drone-livox.service
-Requires=drone-livox.service
-Requires=drone-state-publisher.service
+After=drone-livox.service drone-mavros.service
+Requires=drone-livox.service drone-mavros.service
+
 
 [Service]
 Type=simple
 User=drone008
-ExecStartPre=/bin/sleep 5
+ExecStartPre=/bin/sleep 15
 ExecStart=/bin/bash -c "\
   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
   source /opt/ros/humble/setup.bash && \
-  source /home/drone008/ws_ros2_mavsdk/install/setup.bash && \
+  source /home/drone008/ws_auto_drone_008/install/setup.bash && \
   source /home/drone008/ws_livox_drivers/install/setup.bash && \
   ros2 launch fast_lio mapping.launch.py"
 Restart=on-failure

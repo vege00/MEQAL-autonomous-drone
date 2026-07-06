@@ -6,11 +6,12 @@ After=drone-state-publisher.service
 [Service]
 Type=simple
 User=drone008
-ExecStartPre=/bin/sleep 5
+ExecStartPre=/bin/sleep 15
 ExecStart=/bin/bash -c "\
   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
   source /opt/ros/humble/setup.bash && \
-  source /home/drone008/ws_ros2_mavsdk/install/setup.bash && \
+  source /home/drone008/ws_auto_drone_008/install/setup.bash && \
+  #source /home/drone008/ws_ros2_mavsdk/install/setup.bash && \
   source /home/drone008/ws_livox_drivers/install/setup.bash && \
   ros2 run telemetry_publisher telemetry_node"
 Restart=on-failure

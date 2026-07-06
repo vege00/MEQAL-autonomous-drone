@@ -10,7 +10,7 @@ ExecStartPre=/bin/sleep 5
 ExecStart=/bin/bash -c "\
   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
   source /opt/ros/humble/setup.bash && \
-  source /home/drone008/ws_ros2_mavsdk/install/setup.bash && \
+  source /home/drone008/ws_auto_drone_008/install/setup.bash && \
   source /home/drone008/ws_livox_drivers/install/setup.bash && \
   ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 body base_link"
 Restart=on-failure

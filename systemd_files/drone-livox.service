@@ -1,16 +1,18 @@
 [Unit]
 Description=ROS2 Livox Driver
-After=drone-telemetry-start.service
-
+After=drone-ptp.service network.target
+Requires=drone-ptp.service
+#After=drone-telemetry-start.service
+#Requires=drone-telemetry-start.service
 
 [Service]
 Type=simple
 User=drone008
-ExecStartPre=/bin/sleep 5
+ExecStartPre=/bin/sleep 15
 ExecStart=/bin/bash -c "\
   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
   source /opt/ros/humble/setup.bash && \
-  source /home/drone008/ws_ros2_mavsdk/install/setup.bash && \
+  source /home/drone008/ws_auto_drone_008/install/setup.bash && \
   source /home/drone008/ws_livox_drivers/install/setup.bash && \
   ros2 launch livox_ros_driver2 msg_MID360s_launch.py"
 Restart=on-failure

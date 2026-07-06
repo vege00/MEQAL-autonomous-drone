@@ -1,0 +1,18 @@
+[Unit]
+Description=ROS2 Fast-LIO to MAVROS vision pose bridge
+After=drone-state-publisher.service
+Requires=drone-state-publisher.service
+
+[Service]
+Type=simple
+User=drone008
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash -c "\
+  export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
+  source /opt/ros/humble/setup.bash && \
+  source /home/drone008/ws_auto_drone_008/install/setup.bash && \
+  ros2 launch mavros px4.launch   fcu_url:=/dev/ttyACM0:921600   gcs_url:=udp://@100.87.93.90:14550"
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
