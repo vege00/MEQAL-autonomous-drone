@@ -11,3 +11,7 @@
 [submodule "src/FAST_LIO_SLAM_ros2"]
 	path = src/FAST_LIO_SLAM_ros2
 	url = git@github.com:rohrschacht/FAST_LIO_SLAM_ros2.git
+[submodule "src/ego-planner-swarm"]
+	path = src/ego-planner-swarm
+	url = git@github.com:ZJU-FAST-Lab/ego-planner-swarm.git
+	branch = ros2_version

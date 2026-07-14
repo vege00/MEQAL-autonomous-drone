@@ -12,5 +12,5 @@ URDF=$(cat /home/drone008/ws_auto_drone_008/drone_tf/drone-008.xml)
 exec ros2 run robot_state_publisher robot_state_publisher \
     --ros-args -p robot_description:="$URDF"
 
-exec ros2 run telemetry_publisher telemetry_node 
+#exec ros2 run telemetry_publisher telemetry_node 
 
