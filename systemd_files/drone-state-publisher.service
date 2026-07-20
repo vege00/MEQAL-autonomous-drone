@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=drone008
 Environment=HOME=/home/drone008
+ExecStartPre=/bin/sleep 10
 ExecStart=/home/drone008/ws_auto_drone_008/scripts/start_state_publisher.sh
 Restart=on-failure
 RestartSec=5s

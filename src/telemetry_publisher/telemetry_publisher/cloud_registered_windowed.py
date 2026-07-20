@@ -14,7 +14,7 @@ class CloudAggregator(Node):
     def __init__(self):
         super().__init__('cloud_aggregator')
 
-        self.declare_parameter('window_seconds', 1.5)
+        self.declare_parameter('window_seconds', 1)
         self.declare_parameter('voxel_size', 0.1)          # match grid_map/resolution
         self.declare_parameter('crop_radius_xy', 6.0)      # slightly > local_update_range_x/y
         self.declare_parameter('crop_radius_z', 5.0)
@@ -31,7 +31,7 @@ class CloudAggregator(Node):
         self.buffer = deque()  # list of (timestamp, Nx3 np.array)
         self.latest_pos = None
 
-        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT,
+        qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE,
                           history=HistoryPolicy.KEEP_LAST)
 
         self.sub_cloud = self.create_subscription(
@@ -61,29 +61,48 @@ class CloudAggregator(Node):
         while self.buffer and self.buffer[0][0] < cutoff:
             self.buffer.popleft()
 
+    # def voxel_downsample(self, pts: np.ndarray, voxel: float) -> np.ndarray:
+    #     if pts.shape[0] == 0:
+    #         return pts
+    #     keys = np.floor(pts / voxel).astype(np.int64)
+    #     # dedupe by voxel key, keep first occurrence
+    #     _, unique_idx = np.unique(keys, axis=0, return_index=True)
+    #     return pts[unique_idx]
+
     def voxel_downsample(self, pts: np.ndarray, voxel: float) -> np.ndarray:
         if pts.shape[0] == 0:
             return pts
         keys = np.floor(pts / voxel).astype(np.int64)
-        # dedupe by voxel key, keep first occurrence
-        _, unique_idx = np.unique(keys, axis=0, return_index=True)
+        # Encode 3D voxel index into a single int64 hash — much faster than axis=0 unique
+        hash_keys = keys[:, 0] * 73856093 ^ keys[:, 1] * 19349663 ^ keys[:, 2] * 83492791
+        _, unique_idx = np.unique(hash_keys, return_index=True)
         return pts[unique_idx]
 
     def publish_merged(self):
         if not self.buffer or self.last_header is None:
             return
 
-        merged = np.concatenate([p for _, p in self.buffer], axis=0)
+        now = time.time()
+        cutoff = now - self.window_seconds
+        while self.buffer and self.buffer[0][0] < cutoff:
+            self.buffer.popleft()
 
+        if not self.buffer:
+            return
+
+        oldest_age = now - self.buffer[0][0]
+        self.get_logger().info(
+            f"buffer entries: {len(self.buffer)}, oldest_age: {oldest_age:.2f}s, window_seconds: {self.window_seconds}",
+            throttle_duration_sec=1.0)
+
+        merged = np.concatenate([p for _, p in self.buffer], axis=0)
         if self.latest_pos is not None:
             d = merged - self.latest_pos
             mask = (np.abs(d[:, 0]) < self.crop_xy) & \
-                   (np.abs(d[:, 1]) < self.crop_xy) & \
-                   (np.abs(d[:, 2]) < self.crop_z)
+                (np.abs(d[:, 1]) < self.crop_xy) & \
+                (np.abs(d[:, 2]) < self.crop_z)
             merged = merged[mask]
-
         merged = self.voxel_downsample(merged, self.voxel_size)
-
         header = self.last_header
         header.stamp = self.get_clock().now().to_msg()
         cloud_msg = pc2.create_cloud_xyz32(header, merged.tolist())
