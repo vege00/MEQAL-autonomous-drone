@@ -22,7 +22,9 @@ class CloudAggregator(Node):
         self.declare_parameter('cloud_topic', '/cloud_registered')
         self.declare_parameter('odom_topic', '/Odometry')
         self.declare_parameter('output_topic', '/cloud_registered_windowed')
+        self.declare_parameter('self_exclusion_radius', 0.6)  # tune based on actual arm/leg extent
 
+        self.self_exclusion_radius = self.get_parameter('self_exclusion_radius').value
         self.window_seconds = self.get_parameter('window_seconds').value
         self.voxel_size = self.get_parameter('voxel_size').value
         self.crop_xy = self.get_parameter('crop_radius_xy').value
@@ -98,10 +100,12 @@ class CloudAggregator(Node):
         merged = np.concatenate([p for _, p in self.buffer], axis=0)
         if self.latest_pos is not None:
             d = merged - self.latest_pos
-            mask = (np.abs(d[:, 0]) < self.crop_xy) & \
-                (np.abs(d[:, 1]) < self.crop_xy) & \
-                (np.abs(d[:, 2]) < self.crop_z)
-            merged = merged[mask]
+            dist = np.linalg.norm(d, axis=1)
+            outer_mask =    (np.abs(d[:, 0]) < self.crop_xy) & \
+                            (np.abs(d[:, 1]) < self.crop_xy) & \
+                            (np.abs(d[:, 2]) < self.crop_z)
+            inner_mask = dist > self.self_exclusion_radius   
+            merged = merged[outer_mask & inner_mask]
         merged = self.voxel_downsample(merged, self.voxel_size)
         header = self.last_header
         header.stamp = self.get_clock().now().to_msg()

@@ -192,6 +192,8 @@ class MissionSequencer(Node):
             self.get_logger().info(f'Reached waypoint {self.wp_index} (dist={dist:.2f}m). Advancing.')
             self.wp_index += 1
             self.send_current_goal()
+        else:
+            self.send_current_goal()
 
 
 def main():
