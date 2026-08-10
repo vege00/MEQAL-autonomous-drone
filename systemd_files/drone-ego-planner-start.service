@@ -1,0 +1,20 @@
+[Unit]
+Description=Service for starting ego-planner. After cloud_registered_windowed topic.
+After=drone-registered-windowed-start.service
+Requires=drone-registered-windowed-start.service
+
+[Service]
+Environment=CYCLONEDDS_URI=file:///etc/cyclonedds/drone.xml
+Type=simple
+User=drone008
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash -c "\
+  export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
+  source /opt/ros/humble/setup.bash && \
+  source /home/drone008/ws_auto_drone_008/install/setup.bash && \
+  source /home/drone008/ws_livox_drivers/install/setup.bash && \
+  ros2 launch ego_planner real.launch.py"
+Restart=on-failure
+
+#[Install]
+#WantedBy=multi-user.target

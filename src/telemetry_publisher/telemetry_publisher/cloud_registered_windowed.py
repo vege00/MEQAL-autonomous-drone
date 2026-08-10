@@ -22,7 +22,7 @@ class CloudAggregator(Node):
         self.declare_parameter('cloud_topic', '/cloud_registered')
         self.declare_parameter('odom_topic', '/Odometry')
         self.declare_parameter('output_topic', '/cloud_registered_windowed')
-        self.declare_parameter('self_exclusion_radius', 0.6)  # tune based on actual arm/leg extent
+        self.declare_parameter('self_exclusion_radius', 1.2)
 
         self.self_exclusion_radius = self.get_parameter('self_exclusion_radius').value
         self.window_seconds = self.get_parameter('window_seconds').value

@@ -1,0 +1,20 @@
+[Unit]
+Description=Service for publishing windowed registered data from ego lidar for ego planner.
+After=drone-fast_lio.service
+
+
+[Service]
+Environment=CYCLONEDDS_URI=file:///etc/cyclonedds/drone.xml
+Type=simple
+User=drone008
+ExecStartPre=/bin/sleep 15
+ExecStart=/bin/bash -c "\
+  export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && \
+  source /opt/ros/humble/setup.bash && \
+  source /home/drone008/ws_auto_drone_008/install/setup.bash && \
+  source /home/drone008/ws_livox_drivers/install/setup.bash && \
+  ros2 run telemetry_publisher cloud_registered_windowed"
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

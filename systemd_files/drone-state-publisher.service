@@ -3,6 +3,7 @@ Description=ROS2 Robot State Publisher
 After=network.target
 
 [Service]
+Environment=CYCLONEDDS_URI=file:///etc/cyclonedds/drone.xml
 Type=simple
 User=drone008
 Environment=HOME=/home/drone008

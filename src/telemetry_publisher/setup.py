@@ -6,7 +6,7 @@ package_name = 'telemetry_publisher'
 
 setup(
     name=package_name,
-    version='0.0.1',
+    version='0.0.3',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
@@ -18,7 +18,7 @@ setup(
     zip_safe=True,
     maintainer='drone008',
     maintainer_email='veetio@hotmail.fi',
-    description='TODO: ROS2 package for the necessary nodes for communication between the other ros2 packages in the drone ws.',
+    description='ROS2 package for the necessary nodes for communication between the other ros2 packages and offboard mission control in the drone ws.',
     license='TODO: License declaration',
     extras_require={
         'test': [
@@ -33,6 +33,7 @@ setup(
         'cloud_registered_windowed = telemetry_publisher.cloud_registered_windowed:main',
         'mission_sequencer = telemetry_publisher.mission_sequencer:main',
         'flight_manager = telemetry_publisher.flight_manager:main',
+        'single_goal_test = telemetry_publisher.single_goal_test:main',
         
         ],
     },

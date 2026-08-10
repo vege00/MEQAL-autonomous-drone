@@ -3,6 +3,7 @@ Description=PTP Master Clock for Livox MID-360
 After=network.target
 
 [Service]
+Environment=CYCLONEDDS_URI=file:///etc/cyclonedds/drone.xml
 Type=simple
 ExecStart=/usr/sbin/ptp4l -i eno1 -m -S --masterOnly 1
 Restart=on-failure

@@ -1,0 +1,12 @@
+[Unit]
+Description=Wait until eno1 (lidar network) has an IP address
+After=network-pre.target
+Before=drone-ptp.service drone-state-publisher.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/wait-for-eno1.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -23,9 +23,12 @@ handoff_qos = QoSProfile(
 
 
 gps_qos = QoSProfile(
-    depth=10, 
+    depth=5, 
     reliability=ReliabilityPolicy.BEST_EFFORT,
     history=HistoryPolicy.KEEP_LAST)
+
+mavros_sensor_qos = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT,
+                               history=HistoryPolicy.KEEP_LAST)
 
 class MissionSequencer(Node):
     def __init__(self):
@@ -72,8 +75,44 @@ class MissionSequencer(Node):
 
         self.get_logger().info('Waiting for GPS anchor, FC mission, and enable signal...')
 
-    # ---------- callbacks ----------
+        self.px4_yaw = None
+        self.fastlio_yaw = None
+        self.yaw_offset = None
+        
+        self.sub_px4_pose = self.create_subscription(
+            PoseStamped, '/mavros/local_position/pose', self.px4_pose_cb, mavros_sensor_qos)
 
+    # ---------- callbacks ----------
+    
+#---Frame rotation---
+    def quat_to_yaw(self, q):
+        siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+        return math.atan2(siny_cosp, cosy_cosp)
+
+    def px4_pose_cb(self, msg: PoseStamped):
+        if self.px4_yaw is not None:
+            return  # capture once
+        self.px4_yaw = self.quat_to_yaw(msg.pose.orientation)
+        self.try_compute_yaw_offset()
+
+    def odom_cb(self, msg: Odometry):  # you already have this — extend it
+        p = msg.pose.pose.position
+        self.current_pos = (p.x, p.y, p.z)
+        if self.fastlio_yaw is None:
+            self.fastlio_yaw = self.quat_to_yaw(msg.pose.pose.orientation)
+            self.try_compute_yaw_offset()
+
+    def try_compute_yaw_offset(self):
+        if self.px4_yaw is None or self.fastlio_yaw is None or self.yaw_offset is not None:
+            return
+        self.yaw_offset = self.px4_yaw - self.fastlio_yaw
+        self.get_logger().info(
+            f'Yaw offset computed: px4_yaw={math.degrees(self.px4_yaw):.1f}°, '
+            f'fastlio_yaw={math.degrees(self.fastlio_yaw):.1f}°, '
+            f'offset={math.degrees(self.yaw_offset):.1f}°')
+    
+#-----End of frame rotation-----
     def gps_cb(self, msg: NavSatFix):
         if self.anchor is not None:
             return
@@ -112,7 +151,7 @@ class MissionSequencer(Node):
     def try_load_mission(self):
         if self.mission_started:
             return
-        if self.anchor is None or self.mission_items is None or not self.enabled:
+        if self.anchor is None or self.mission_items is None or not self.enabled and self.yaw_offset is not None:
             return
 
         self.waypoints = self.convert_waypoints(self.mission_items, self.anchor)
@@ -126,21 +165,24 @@ class MissionSequencer(Node):
         self.send_current_goal()
 
     def convert_waypoints(self, mission_items, anchor):
-        home_lat, home_lon, home_alt = anchor
-        waypoints = []
-        for wp in mission_items:
-            cmd = wp.command
-            if cmd not in (MAV_CMD_NAV_WAYPOINT, MAV_CMD_NAV_LAND, MAV_CMD_NAV_TAKEOFF):
-                continue
-            lat, lon, rel_alt = wp.x_lat, wp.y_long, wp.z_alt
-            e, n, u = pm.geodetic2enu(lat, lon, home_alt + rel_alt,
-                                       home_lat, home_lon, home_alt)
-            waypoints.append({
-                'command': cmd, 'x': e, 'y': n, 'z': u,
-                'is_takeoff': cmd == MAV_CMD_NAV_TAKEOFF,
-                'is_land': cmd == MAV_CMD_NAV_LAND,
-            })
-        return waypoints
+            home_lat, home_lon, home_alt = anchor
+            waypoints = []
+            for wp in mission_items:
+                cmd = wp.command
+                if cmd not in (MAV_CMD_NAV_WAYPOINT, MAV_CMD_NAV_LAND, MAV_CMD_NAV_TAKEOFF):
+                    continue
+                lat, lon, rel_alt = wp.x_lat, wp.y_long, wp.z_alt
+                e, n, u = pm.geodetic2enu(lat, lon, home_alt + rel_alt, home_lat, home_lon, home_alt)
+    
+                if self.yaw_offset is not None:
+                    x = e * math.cos(-self.yaw_offset) - n * math.sin(-self.yaw_offset)
+                    y = e * math.sin(-self.yaw_offset) + n * math.cos(-self.yaw_offset)
+                else:
+                    x, y = e, n  # fallback, uncorrected — should not happen in practice if gated correctly
+    
+                waypoints.append({'command': cmd, 'x': x, 'y': y, 'z': u,
+                                'is_takeoff': cmd == MAV_CMD_NAV_TAKEOFF, 'is_land': cmd == MAV_CMD_NAV_LAND})
+            return waypoints
 
     # ---------- sequencing ----------
 
@@ -192,8 +234,7 @@ class MissionSequencer(Node):
             self.get_logger().info(f'Reached waypoint {self.wp_index} (dist={dist:.2f}m). Advancing.')
             self.wp_index += 1
             self.send_current_goal()
-        else:
-            self.send_current_goal()
+        
 
 
 def main():

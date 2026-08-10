@@ -4,6 +4,7 @@ After=drone-state-publisher.service
 Requires=drone-state-publisher.service
 
 [Service]
+Environment=CYCLONEDDS_URI=file:///etc/cyclonedds/drone.xml
 Type=simple
 User=drone008
 ExecStartPre=/bin/sleep 5

@@ -2,10 +2,10 @@
 Description=ROS2 Livox Driver
 After=drone-ptp.service network.target
 Requires=drone-ptp.service
-#After=drone-telemetry-start.service
-#Requires=drone-telemetry-start.service
+
 
 [Service]
+Environment=CYCLONEDDS_URI=file:///etc/cyclonedds/drone.xml
 Type=simple
 User=drone008
 ExecStartPre=/bin/sleep 15

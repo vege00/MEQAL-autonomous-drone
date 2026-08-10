@@ -4,6 +4,7 @@ After=drone-fast_lio.service drone-mavros.service
 Requires=drone-fast_lio.service drone-mavros.service
 
 [Service]
+Environment=CYCLONEDDS_URI=file:///etc/cyclonedds/drone.xml
 Type=simple
 User=drone008
 ExecStartPre=/bin/sleep 15
