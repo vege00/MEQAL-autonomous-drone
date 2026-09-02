@@ -1,6 +1,7 @@
 [Unit]
 Description=PTP Master Clock for Livox MID-360
-After=network.target
+After=drone-eno1-online.service
+Requires=drone-eno1-online.service
 
 [Service]
 Environment=CYCLONEDDS_URI=file:///etc/cyclonedds/drone.xml

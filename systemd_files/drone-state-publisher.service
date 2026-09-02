@@ -1,6 +1,7 @@
 [Unit]
 Description=ROS2 Robot State Publisher
-After=network.target
+After=drone-eno1-online.service
+Requires=drone-eno1-online.service
 
 [Service]
 Environment=CYCLONEDDS_URI=file:///etc/cyclonedds/drone.xml

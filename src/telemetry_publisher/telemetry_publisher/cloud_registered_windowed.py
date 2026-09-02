@@ -22,7 +22,7 @@ class CloudAggregator(Node):
         self.declare_parameter('cloud_topic', '/cloud_registered')
         self.declare_parameter('odom_topic', '/Odometry')
         self.declare_parameter('output_topic', '/cloud_registered_windowed')
-        self.declare_parameter('self_exclusion_radius', 1.2)
+        self.declare_parameter('self_exclusion_radius', 1.2)    
 
         self.self_exclusion_radius = self.get_parameter('self_exclusion_radius').value
         self.window_seconds = self.get_parameter('window_seconds').value
@@ -51,17 +51,7 @@ class CloudAggregator(Node):
         p = msg.pose.pose.position
         self.latest_pos = np.array([p.x, p.y, p.z])
 
-    def cloud_cb(self, msg: PointCloud2):
-        pts = np.array(list(pc2.read_points(msg, field_names=('x', 'y', 'z'), skip_nans=True)))
-        if pts.size == 0:
-            return
-        now = time.time()
-        self.buffer.append((now, pts))
-        self.last_header = msg.header
-
-        cutoff = now - self.window_seconds
-        while self.buffer and self.buffer[0][0] < cutoff:
-            self.buffer.popleft()
+    
 
     # def voxel_downsample(self, pts: np.ndarray, voxel: float) -> np.ndarray:
     #     if pts.shape[0] == 0:

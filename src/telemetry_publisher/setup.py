@@ -34,6 +34,7 @@ setup(
         'mission_sequencer = telemetry_publisher.mission_sequencer:main',
         'flight_manager = telemetry_publisher.flight_manager:main',
         'single_goal_test = telemetry_publisher.single_goal_test:main',
+        'simple_flight_test = telemetry_publisher.simple_flight_test:main',
         
         ],
     },

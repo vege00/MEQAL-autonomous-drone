@@ -96,12 +96,7 @@ class MissionSequencer(Node):
         self.px4_yaw = self.quat_to_yaw(msg.pose.orientation)
         self.try_compute_yaw_offset()
 
-    def odom_cb(self, msg: Odometry):  # you already have this — extend it
-        p = msg.pose.pose.position
-        self.current_pos = (p.x, p.y, p.z)
-        if self.fastlio_yaw is None:
-            self.fastlio_yaw = self.quat_to_yaw(msg.pose.pose.orientation)
-            self.try_compute_yaw_offset()
+    
 
     def try_compute_yaw_offset(self):
         if self.px4_yaw is None or self.fastlio_yaw is None or self.yaw_offset is not None:
@@ -113,6 +108,8 @@ class MissionSequencer(Node):
             f'offset={math.degrees(self.yaw_offset):.1f}°')
     
 #-----End of frame rotation-----
+
+#-----Callbacks for subscriptions-----
     def gps_cb(self, msg: NavSatFix):
         if self.anchor is not None:
             return
@@ -123,8 +120,11 @@ class MissionSequencer(Node):
         self.try_load_mission()
 
     def odom_cb(self, msg: Odometry):
-        p = msg.pose.pose.position
-        self.current_pos = (p.x, p.y, p.z)
+            p = msg.pose.pose.position
+            self.current_pos = (p.x, p.y, p.z)
+            if self.fastlio_yaw is None:
+                self.fastlio_yaw = self.quat_to_yaw(msg.pose.pose.orientation)
+                self.try_compute_yaw_offset()
 
     def waypoints_cb(self, msg: WaypointList):
         self.mission_items = msg.waypoints
@@ -151,9 +151,14 @@ class MissionSequencer(Node):
     def try_load_mission(self):
         if self.mission_started:
             return
-        if self.anchor is None or self.mission_items is None or not self.enabled and self.yaw_offset is not None:
+        if self.anchor is None or self.mission_items is None or not self.enabled or self.yaw_offset is None:
             return
-
+        
+        self.get_logger().info(f'yaw_offset at load time: {self.yaw_offset}')
+        self.get_logger().info(
+            f'px4_yaw={math.degrees(self.px4_yaw):.1f}°, fastlio_yaw={math.degrees(self.fastlio_yaw):.1f}°, '
+            f'offset={math.degrees(self.yaw_offset):.1f}°')
+        
         self.waypoints = self.convert_waypoints(self.mission_items, self.anchor)
         if not self.waypoints:
             self.get_logger().error('No usable waypoints converted from FC mission.')
@@ -163,6 +168,7 @@ class MissionSequencer(Node):
         self.wp_index = 0
         self.get_logger().info(f'Loaded {len(self.waypoints)} waypoints, starting sequence.')
         self.send_current_goal()
+
 
     def convert_waypoints(self, mission_items, anchor):
             home_lat, home_lon, home_alt = anchor
