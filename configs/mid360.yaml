@@ -10,14 +10,15 @@
         map_file_path: "./test.pcd"
         common:
             lid_topic: "/livox/lidar"
-            imu_topic: "/mavros/imu/data_raw"
+            #imu_topic: "/mavros/imu/data_raw"
+            imu_topic: "/livox/imu"
             time_sync_en: true
             time_offset_lidar_to_imu: 0.0
         preprocess:
             lidar_type: 1
             scan_line: 6          # ← change to match your model
             blind: 0.8
-            timestamp_unit: 
+            timestamp_unit: 3
             scan_rate: 10
         mapping:
             acc_cov: 0.001        # ← fixed
@@ -27,10 +28,11 @@
             fov_degree: 360.0
             det_range: 100.0
             extrinsic_est_en: false   # ← fixed
-            extrinsic_T: [ 0.09, 0.0, -0.17 ]
-            extrinsic_R: [  0.707,  0.0,  0.707,
-                            -0.0,  -1.0,  0.0,
-                            0.707,  -0.0, -0.707 ]
+            #extrinsic_T: [ 0.09, 0.0, -0.17 ]
+            extrinsic_T: [ 0.05512, 0.02226, -0.0297 ]
+            extrinsic_R: [ 1., 0., 0.,
+                            0., 1., 0.,
+                            0., 0., 1.]
 
                             
         publish:
