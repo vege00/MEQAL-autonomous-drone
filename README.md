@@ -6,6 +6,7 @@ This project builds upon [Samy Warnant's drone 008 project](https://github.com/S
 The greater end goal is to design and program a drone capable of fully autonomous mission completion within operator line of sight.
 The drone can be equipped with any necessary sensor payload for surveying and mapping methane emissions and other quantifiable factors.
 
-**NOTICE**
-This project builds on several open-source ROS 2 packages located in src/. Each retains its own license. See "3rd party licenses.md" and each package's LICENSE files for more details.
+## NOTICE
+This project builds on several open-source ROS 2 packages located in src/. Each retains its own license. 
+See "3rd party licenses.md" and each package's LICENSE files for more details.
 
