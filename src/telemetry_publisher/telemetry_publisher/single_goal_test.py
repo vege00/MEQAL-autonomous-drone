@@ -25,7 +25,7 @@ class SingleGoalTest(Node):
                               durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
         self.pub_goal = self.create_publisher(PoseStamped, self.goal_topic, goal_qos)
-        self.sub_odom = self.create_subscription(Odometry, '/Odometry', self.odom_cb, 10)
+        self.sub_odom = self.create_subscription(Odometry, '/Odometry_corrected', self.odom_cb, 10)
 
         self.sent = False
         self.get_logger().info('Waiting for first /Odometry message...')
