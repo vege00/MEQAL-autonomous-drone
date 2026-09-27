@@ -362,7 +362,7 @@ class OdomFrameCorrector(Node):
 
         self.declare_parameter(
             'initialization_time',
-            2.0
+            4.0
         )
 
         self.declare_parameter(
@@ -540,6 +540,11 @@ class OdomFrameCorrector(Node):
         #
         self.startup_rotations = []
 
+        # NEW: raw camera_init-frame positions collected during the
+        # same startup window, used to anchor the output origin (see
+        # below) and absorb FAST-LIO's own boot-time position jump.
+        self.startup_positions = []
+
         # NEW: raw accelerometer and gyroscope samples collected
         # during the same startup window.
         self.accel_samples = []
@@ -548,6 +553,15 @@ class OdomFrameCorrector(Node):
         # Fixed correction calculated after initialization.
         #
         self.R_LEVEL = np.eye(3)
+
+        # NEW: fixed position offset (in the raw camera_init frame),
+        # subtracted from every subsequent position before the mount
+        # transform is applied. This makes the corrected output start
+        # at the map origin, regardless of where FAST-LIO's own
+        # position estimate happened to be at the moment
+        # initialization completed (it commonly is NOT [0,0,0] --
+        # e.g. after an initial-scan-match jump during boot).
+        self.T_ORIGIN_OFFSET = np.zeros(3)
 
         # -------------------------------------------------------------
         # Logging
@@ -619,6 +633,15 @@ class OdomFrameCorrector(Node):
 
             self.startup_rotations.append(
                 R_raw_body.copy()
+            )
+
+            p_startup = msg.pose.pose.position
+            self.startup_positions.append(
+                np.array([
+                    p_startup.x,
+                    p_startup.y,
+                    p_startup.z
+                ])
             )
 
             self.maybe_finish_initialization()
@@ -695,6 +718,15 @@ class OdomFrameCorrector(Node):
             p_in.y,
             p_in.z
         ])
+
+        # Anchor the origin: remove FAST-LIO's boot-time position
+        # offset (measured during startup) so the output always
+        # starts at the map origin instead of wherever camera_init
+        # happened to settle after its own initial-scan-match jump.
+        p_camera_init_body = (
+            p_camera_init_body
+            - self.T_ORIGIN_OFFSET
+        )
 
         # Lever arm in raw body frame.
         p_camera_init_baselink = (
@@ -1004,6 +1036,37 @@ class OdomFrameCorrector(Node):
             target_up
         )
 
+        # -------------------------------------------------------------
+        # NEW: anchor the origin.
+        #
+        # Average the raw camera_init-frame positions collected
+        # during the same startup window, and store that as the
+        # offset to subtract from every future position. This
+        # absorbs whatever position FAST-LIO's own estimate drifted
+        # to during boot (commonly nonzero even though camera_init is
+        # nominally defined at the origin), without needing to know
+        # or care why it moved.
+        # -------------------------------------------------------------
+
+        position_stack = np.array(self.startup_positions)
+        self.T_ORIGIN_OFFSET = position_stack.mean(axis=0)
+
+        position_spread = float(np.max(
+            np.linalg.norm(
+                position_stack - self.T_ORIGIN_OFFSET,
+                axis=1
+            )
+        ))
+
+        if position_spread > 0.05:
+            self.get_logger().warn(
+                f'Position samples during initialization spread by '
+                f'up to {position_spread * 100:.1f} cm around their '
+                f'mean. If FAST-LIO was still settling/jumping when '
+                f'this window closed, the anchored origin may be '
+                f'inaccurate. Consider increasing initialization_time.'
+            )
+
         self.initialized = True
 
         # -------------------------------------------------------------
@@ -1026,6 +1089,11 @@ class OdomFrameCorrector(Node):
             f' Odometry samples     : {len(self.startup_rotations)}\n'
             f' Accelerometer samples: {len(self.accel_samples)}\n'
             f' Measured |g|         : {accel_norm:.4f} m/s^2\n'
+            f' Origin offset (xyz)  : '
+            f'[{self.T_ORIGIN_OFFSET[0]:+.3f}, '
+            f'{self.T_ORIGIN_OFFSET[1]:+.3f}, '
+            f'{self.T_ORIGIN_OFFSET[2]:+.3f}] m\n'
+            f' Position spread      : {position_spread * 100:.1f} cm\n'
             '\n'
             f' FAST-LIO raw roll  : '
             f'{math.degrees(roll0):+.3f} deg\n'
@@ -1045,6 +1113,7 @@ class OdomFrameCorrector(Node):
 
         # Free the samples.
         self.startup_rotations.clear()
+        self.startup_positions.clear()
         self.accel_samples.clear()
         self.angular_rate_samples.clear()
 
