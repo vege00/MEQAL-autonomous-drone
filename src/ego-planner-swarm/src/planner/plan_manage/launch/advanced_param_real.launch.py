@@ -6,9 +6,9 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     # LaunchConfigurations
-    map_size_x = LaunchConfiguration('map_size_x_', default=42.0)
-    map_size_y = LaunchConfiguration('map_size_y_', default=30.0)
-    map_size_z = LaunchConfiguration('map_size_z_', default=5.0)
+    map_size_x = LaunchConfiguration('map_size_x_', default=50.0)
+    map_size_y = LaunchConfiguration('map_size_y_', default=50.0)
+    map_size_z = LaunchConfiguration('map_size_z_', default=50.0)
     
     odometry_topic = LaunchConfiguration('odometry_topic', default='/Odometry_corrected')
     camera_pose_topic = LaunchConfiguration('camera_pose_topic', default='camera_pose')
@@ -20,9 +20,9 @@ def generate_launch_description():
     fx = LaunchConfiguration('fx', default=387.229248046875)
     fy = LaunchConfiguration('fy', default=387.229248046875)
     
-    max_vel = LaunchConfiguration('max_vel', default=2.0)
+    max_vel = LaunchConfiguration('max_vel', default=1.0)
     max_acc = LaunchConfiguration('max_acc', default=3.0)
-    planning_horizon = LaunchConfiguration('planning_horizon', default=7.5)
+    planning_horizon = LaunchConfiguration('planning_horizon', default=5.0)
     
     point_num = LaunchConfiguration('point_num', default=1)
     point0_x = LaunchConfiguration('point0_x', default=0.0)
@@ -138,14 +138,14 @@ def generate_launch_description():
             {'fsm/waypoint4_y': point4_y},
             {'fsm/waypoint4_z': point4_z},
             
-            {'grid_map/resolution': 0.2},
+            {'grid_map/resolution': 0.4},
             {'grid_map/map_size_x': map_size_x},
             {'grid_map/map_size_y': map_size_y},
             {'grid_map/map_size_z': map_size_z},
             {'grid_map/local_update_range_x': 5.0},
             {'grid_map/local_update_range_y': 5.0},
             {'grid_map/local_update_range_z': 4.0},
-            {'grid_map/obstacles_inflation': 0.4},
+            {'grid_map/obstacles_inflation': 0.5},
             {'grid_map/local_map_margin': 10},
             {'grid_map/ground_height': -0.01},
             # camera parameter
@@ -170,8 +170,8 @@ def generate_launch_description():
             {'grid_map/min_ray_length': 0.1},
             {'grid_map/max_ray_length': 4.5},
             
-            {'grid_map/virtual_ceil_height': 2.9},
-            {'grid_map/visualization_truncate_height': 1.8},
+            {'grid_map/virtual_ceil_height': 50.0},
+            {'grid_map/visualization_truncate_height': 150.0},
             {'grid_map/show_occ_time': False},
             {'grid_map/pose_type': 2},
             {'grid_map/frame_id': "world"},

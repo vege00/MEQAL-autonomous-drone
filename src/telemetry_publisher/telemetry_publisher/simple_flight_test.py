@@ -16,45 +16,46 @@ goal_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                       durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
 
+def yaw_from_quat(q) -> float:
+    siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+    cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+    return math.atan2(siny_cosp, cosy_cosp)
+
+
 class SimpleFlightTest(Node):
     """
     Phase machine: INIT -> WARMUP -> ARMED_OFFBOARD -> TAKEOFF -> HOVER -> FLY_OUT -> LANDING -> DONE
     Terminal failure phase: ABORTED
 
-    Design notes:
-    - WARMUP exists because PX4 will refuse (silently, from our point of view -
-      the mavros service call still reports mode_sent=true) an OFFBOARD mode
-      switch that arrives before it has already been receiving a setpoint
-      stream. We must publish hold-position setpoints for a bit BEFORE asking
-      to arm/switch to OFFBOARD, not just after.
-    - There is exactly ONE mechanism responsible for getting the vehicle off the
-      ground: OFFBOARD position setpoints, published continuously at 20 Hz.
-      We deliberately do NOT call the FC-native /mavros/cmd/takeoff service,
-      because having two independent authorities (our own climb setpoints AND
-      the FC's internal takeoff routine) fighting for control of the trajectory
-      is exactly what caused ambiguous behavior in the previous version.
-    - HOVER exists so the vehicle settles at takeoff altitude (damps out any
-      residual climb velocity / oscillation) before authority is handed to the
-      external trajectory planner. Handing off while still moving vertically is
-      what causes the planner to start from a stale state estimate and drift.
-      The goal is only computed and sent once HOVER's settle time has elapsed.
-    - Phase transitions happen ONLY inside state_machine_cb. The fast setpoint
-      timer never mutates self.phase; it only reads it.
-    - Every phase has a watchdog timeout. If we get stuck, we abort toward
-      LANDING (or straight to ABORTED if landing itself is unsafe/stale).
-    - If OFFBOARD or arming drops unexpectedly during flight (RC override,
-      safety trip, FC-side rejection, etc.), we stop publishing setpoints and
-      go to ABORTED rather than continuing to fight whatever took control.
+    Changes vs previous version
+    ---------------------------
+    - TAKEOFF is now a single, constant position setpoint at takeoff_alt.
+      The liftoff velocity burst and the position ramp are gone. The old
+      logic switched control mode whenever measured height crossed
+      liftoff_height_m (0.4 m) and RESET the ramp every time the vehicle
+      dipped back below it, which produces a limit cycle right at 0.4 m.
+      Climb speed is now limited by the FC (PX4 MPC_Z_VEL_MAX_UP), not here.
+    - Every setpoint carries an explicit yaw. Hold phases use the launch
+      heading; LANDING captures the heading at phase entry. Previously all
+      hold/landing setpoints used yaw=0.0 (world +X), which commanded a
+      rotation at arming and a snap back to 0 when LANDING began.
+    - FLY_OUT goal-reached check is HORIZONTAL only. ego-planner's manual
+      goal callback ignores the goal z (see compute_and_send_test_goal), so a
+      3D check could never succeed when takeoff_alt differs from the
+      planner's fixed flight height.
 
-    Executor note:
-    - The node runs under a MultiThreadedExecutor with the 20 Hz setpoint timer
-      on its own callback group. This guarantees the setpoint stream can never
-      be starved by a slow/blocking callback elsewhere in the node (service
-      waits, future callbacks, future bugs). Service readiness is also checked
-      ONCE at startup (wait_for_service) rather than inside the timing-critical
-      WARMUP -> ARMED_OFFBOARD transition; try_arm_and_offboard() only ever
-      does a non-blocking service_is_ready() check, so it can never stall the
-      executor even on the single-threaded fallback.
+    Retained design notes
+    ---------------------
+    - WARMUP streams hold setpoints BEFORE requesting arm/OFFBOARD; PX4
+      silently refuses OFFBOARD without an existing setpoint stream.
+    - Only OFFBOARD setpoints get the vehicle off the ground; the FC-native
+      takeoff service is deliberately not used.
+    - Phase transitions happen ONLY in state_machine_cb; the 20 Hz setpoint
+      timer only reads self.phase.
+    - Every phase has a watchdog timeout. Loss of armed+OFFBOARD mid-flight
+      aborts rather than fighting whoever took over.
+    - The 20 Hz timer has its own callback group under a MultiThreadedExecutor
+      so it cannot be starved; service calls are non-blocking.
     """
 
     def __init__(self):
@@ -68,33 +69,14 @@ class SimpleFlightTest(Node):
         self.declare_parameter('goal_frame_id', 'world')
         self.declare_parameter('use_body_forward', True)  # False = straight world +X
 
-        self.declare_parameter('climb_rate_mps', 0.3)
-
-        # Liftoff burst: a firmer, VELOCITY-commanded climb used only for the
-        # first liftoff_height_m of altitude gain. Commanding position (as the
-        # rest of TAKEOFF does) makes PX4 derive climb velocity from a tiny,
-        # self-shrinking position error each tick - fine once airborne, but it
-        # gives too little thrust authority to reliably break ground contact,
-        # which is what causes an uneven, one-side-first liftoff that tips
-        # over instead of climbing cleanly. Commanding velocity directly here
-        # avoids that self-limiting effect for exactly the window where it
-        # matters, then TAKEOFF falls back to the gentler position-based climb
-        # once clear of the ground.
-        self.declare_parameter('liftoff_speed_mps', 0.8)
-        self.declare_parameter('liftoff_height_m', 0.4)
-
         self.declare_parameter('descend_rate_mps', 0.25)
         self.declare_parameter('landing_slow_alt_m', 1.0)   # below this, descend slower
         self.declare_parameter('landing_slow_rate_mps', 0.1)
         self.declare_parameter('land_trigger_alt_m', 0.4)   # switch to FC land below this
 
-        # How long to hold position at takeoff altitude before handing control
-        # to the planner. Tune this up if you still see drift at FLY_OUT entry.
+        # Hold at takeoff altitude before handing control to the planner.
         self.declare_parameter('hover_settle_time_s', 2.0)
-
-        # How long to stream hold-position setpoints BEFORE requesting arm and
-        # OFFBOARD. PX4 requires an existing setpoint stream to accept the
-        # OFFBOARD switch; without this, the switch is silently refused.
+        # Stream hold setpoints this long BEFORE requesting arm + OFFBOARD.
         self.declare_parameter('setpoint_warmup_time_s', 1.5)
 
         self.declare_parameter('odom_stale_timeout_s', 0.5)
@@ -103,9 +85,6 @@ class SimpleFlightTest(Node):
         self.declare_parameter('hover_timeout_s', 15.0)
         self.declare_parameter('fly_out_timeout_s', 60.0)
         self.declare_parameter('landing_timeout_s', 30.0)
-
-        # How often to retry starting arm+OFFBOARD if the services weren't
-        # ready yet the first time WARMUP elapsed (non-blocking retry).
         self.declare_parameter('service_retry_interval_s', 1.0)
 
         self.takeoff_alt = self.get_parameter('takeoff_alt').value
@@ -116,9 +95,6 @@ class SimpleFlightTest(Node):
         self.goal_frame_id = self.get_parameter('goal_frame_id').value
         self.use_body_forward = self.get_parameter('use_body_forward').value
 
-        self.climb_rate = self.get_parameter('climb_rate_mps').value
-        self.liftoff_speed = self.get_parameter('liftoff_speed_mps').value
-        self.liftoff_height = self.get_parameter('liftoff_height_m').value
         self.descend_rate = self.get_parameter('descend_rate_mps').value
         self.landing_slow_alt = self.get_parameter('landing_slow_alt_m').value
         self.landing_slow_rate = self.get_parameter('landing_slow_rate_mps').value
@@ -126,7 +102,6 @@ class SimpleFlightTest(Node):
 
         self.hover_settle_time = self.get_parameter('hover_settle_time_s').value
         self.setpoint_warmup_time = self.get_parameter('setpoint_warmup_time_s').value
-
         self.odom_stale_timeout = self.get_parameter('odom_stale_timeout_s').value
         self.phase_timeouts = {
             'ARMED_OFFBOARD': self.get_parameter('armed_offboard_timeout_s').value,
@@ -142,8 +117,11 @@ class SimpleFlightTest(Node):
         self.launch_xy = None
         self.launch_z = None
         self.launch_yaw = None
-        self.landing_xy = None  # captured once, at LANDING entry - see set_phase-adjacent logic below
         self.local_pos = None
+        self.local_yaw = None
+        self.landing_xy = None       # captured once at LANDING entry
+        self.landing_yaw = None      # captured once at LANDING entry
+        self.landing_ramp_z = None   # descent ramp target, seeded at LANDING entry
         self.last_odom_time = None
         self.current_state = State()
         self.latest_pos_cmd = None
@@ -156,11 +134,8 @@ class SimpleFlightTest(Node):
         self.set_mode_client = self.create_client(SetMode, '/mavros/set_mode')
         self.land_client = self.create_client(CommandTOL, '/mavros/cmd/land')
 
-        # Confirm services exist ONCE, up front, well before the timing-critical
-        # WARMUP -> ARMED_OFFBOARD transition. wait_for_service() blocks, so it
-        # must never be called from inside a callback that runs while the
-        # setpoint stream needs to keep flowing (i.e. never from
-        # try_arm_and_offboard or any timer callback).
+        # Confirm services exist ONCE, up front. wait_for_service() blocks, so
+        # it must never be called from a timer callback.
         for client, name in (
             (self.arming_client, 'arming'),
             (self.set_mode_client, 'set_mode'),
@@ -179,15 +154,9 @@ class SimpleFlightTest(Node):
         self.setpoint_pub = self.create_publisher(PositionTarget, '/mavros/setpoint_raw/local', 10)
         self.pub_goal = self.create_publisher(PoseStamped, self.goal_topic, goal_qos)
 
-        # The setpoint timer gets its own mutually-exclusive callback group so
-        # a MultiThreadedExecutor can always run it on time, even if the state
-        # machine callback (or a service future callback) is mid-execution on
-        # another thread. This is the belt-and-suspenders fix: even if a future
-        # change to this file accidentally reintroduces a blocking call
-        # somewhere else, the 20 Hz OFFBOARD stream still can't be starved.
         self.setpoint_cb_group = MutuallyExclusiveCallbackGroup()
         self.create_timer(0.05, self.setpoint_timer_cb,
-                           callback_group=self.setpoint_cb_group)  # 20 Hz, keeps OFFBOARD alive
+                          callback_group=self.setpoint_cb_group)  # 20 Hz, keeps OFFBOARD alive
         self.create_timer(0.5, self.state_machine_cb)
 
         self.get_logger().info(
@@ -203,14 +172,12 @@ class SimpleFlightTest(Node):
     def odom_cb(self, msg: Odometry):
         p = msg.pose.pose.position
         self.local_pos = (p.x, p.y, p.z)
+        self.local_yaw = yaw_from_quat(msg.pose.pose.orientation)
         self.last_odom_time = time.monotonic()
         if self.launch_xy is None:
             self.launch_xy = (p.x, p.y)
             self.launch_z = p.z
-            q = msg.pose.pose.orientation
-            siny_cosp = 2 * (q.w * q.z + q.x * q.y)
-            cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
-            self.launch_yaw = math.atan2(siny_cosp, cosy_cosp)
+            self.launch_yaw = self.local_yaw
             self.get_logger().info(
                 f'Launch position captured: {self.launch_xy}, yaw={math.degrees(self.launch_yaw):.1f}°')
 
@@ -238,12 +205,12 @@ class SimpleFlightTest(Node):
         if new_phase != self.phase:
             self.get_logger().info(f'Phase: {self.phase} -> {new_phase}')
             if new_phase == 'LANDING' and self.local_pos is not None:
-                # Capture horizontal position ONCE, right here at entry, so
-                # LANDING descends straight down from wherever the vehicle
-                # actually is (goal, timeout point, wherever) rather than
-                # continuously re-tracking it every tick (which would cause
-                # horizontal drift during descent instead of a clean drop).
+                # Capture x, y, z-ramp seed and HEADING once, at entry, so
+                # LANDING is a clean vertical drop with no rotation and no
+                # per-tick re-tracking of the measurement.
                 self.landing_xy = (self.local_pos[0], self.local_pos[1])
+                self.landing_yaw = self.local_yaw
+                self.landing_ramp_z = self.local_pos[2]
             self.phase = new_phase
             self.phase_entered_at = time.monotonic()
 
@@ -255,8 +222,6 @@ class SimpleFlightTest(Node):
         return limit is not None and self.time_in_phase() > limit
 
     def offboard_lost(self) -> bool:
-        """True if the FC is no longer in a state we expect during an
-        active OFFBOARD phase (armed + OFFBOARD mode)."""
         return not (self.current_state.armed and self.current_state.mode == 'OFFBOARD')
 
     def abort(self, reason: str):
@@ -265,7 +230,10 @@ class SimpleFlightTest(Node):
 
     # ---------- setpoint construction ----------
 
-    def make_position_setpoint(self, x, y, z, yaw=0.0):
+    def make_position_setpoint(self, x, y, z, yaw):
+        """Position + yaw setpoint (velocity/accel/yaw-rate ignored).
+        yaw is required on purpose: a silent default of 0.0 (world +X) is
+        what caused the unintended 90 deg swings."""
         pt = PositionTarget()
         pt.header.stamp = self.get_clock().now().to_msg()
         pt.header.frame_id = 'map'
@@ -279,31 +247,12 @@ class SimpleFlightTest(Node):
         pt.yaw = yaw
         return pt
 
-    def make_velocity_setpoint(self, vx, vy, vz, yaw=0.0):
-        """Velocity-only setpoint (position ignored). Used for the liftoff
-        burst: commanding velocity directly gives PX4 a firm, non-self-limiting
-        climb target, unlike deriving velocity implicitly from a tiny position
-        error - see liftoff_speed_mps/liftoff_height_m for why this matters."""
-        pt = PositionTarget()
-        pt.header.stamp = self.get_clock().now().to_msg()
-        pt.header.frame_id = 'map'
-        pt.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
-        pt.type_mask = (
-            PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionTarget.IGNORE_PZ |
-            PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ |
-            PositionTarget.IGNORE_YAW_RATE
-        )
-        pt.velocity.x, pt.velocity.y, pt.velocity.z = vx, vy, vz
-        pt.yaw = yaw
-        return pt
-
     def pos_cmd_to_setpoint(self, msg: PositionCommand) -> PositionTarget:
         pt = PositionTarget()
         pt.header.stamp = self.get_clock().now().to_msg()
         pt.header.frame_id = 'map'
         pt.coordinate_frame = PositionTarget.FRAME_LOCAL_NED
-        # Yaw is no longer masked off - msg.yaw is actually honored now.
-        pt.type_mask = PositionTarget.IGNORE_YAW_RATE
+        pt.type_mask = PositionTarget.IGNORE_YAW_RATE  # pos + vel + accel + yaw all used
         pt.position.x, pt.position.y, pt.position.z = msg.position.x, msg.position.y, msg.position.z
         pt.velocity.x, pt.velocity.y, pt.velocity.z = msg.velocity.x, msg.velocity.y, msg.velocity.z
         pt.acceleration_or_force.x = msg.acceleration.x
@@ -319,65 +268,42 @@ class SimpleFlightTest(Node):
             return
 
         if self.odom_is_stale():
-            # Don't blindly publish setpoints derived from dead data.
+            # Don't publish setpoints derived from dead data.
             return
 
         if self.phase in ('WARMUP', 'ARMED_OFFBOARD'):
-            # Hold current position. During WARMUP this establishes the
-            # setpoint stream PX4 requires before it will accept an OFFBOARD
-            # switch; during ARMED_OFFBOARD it keeps holding while waiting for
-            # arm+OFFBOARD confirmation. This must keep running uninterrupted
-            # through that transition, which is why try_arm_and_offboard()
-            # below is non-blocking.
+            # Hold launch xy / launch heading, at the current altitude (no climb).
             if self.local_pos is not None and self.launch_xy is not None:
                 x, y = self.launch_xy
-                self.setpoint_pub.publish(self.make_position_setpoint(x, y, self.local_pos[2]))
+                self.setpoint_pub.publish(
+                    self.make_position_setpoint(x, y, self.local_pos[2], self.launch_yaw))
 
-        elif self.phase == 'TAKEOFF':
+        elif self.phase in ('TAKEOFF', 'HOVER'):
+            # Constant target: launch xy at takeoff_alt. Speed of the climb is
+            # governed by the FC's position controller limits.
             x, y = self.launch_xy
-            current_z = self.local_pos[2]
-            height_gained = current_z - self.launch_z if self.launch_z is not None else 0.0
-
-            if height_gained < self.liftoff_height:
-                # Liftoff burst: firm velocity command to punch cleanly through
-                # the ground-effect / tip-over-risk zone, rather than the
-                # self-limiting tiny position-error ramp used once airborne.
-                self.setpoint_pub.publish(self.make_velocity_setpoint(0.0, 0.0, self.liftoff_speed))
-            else:
-                # Clear of the ground - fall back to the gentler position-based
-                # climb the rest of the way to takeoff_alt to avoid overshoot.
-                dt = 0.05  # matches this timer's period
-                target_z = min(current_z + self.climb_rate * dt, self.takeoff_alt)
-                self.setpoint_pub.publish(self.make_position_setpoint(x, y, target_z))
-
-        elif self.phase == 'HOVER':
-            # Hold steady at takeoff altitude while the vehicle settles, before
-            # handing control to the planner in FLY_OUT.
-            x, y = self.launch_xy
-            self.setpoint_pub.publish(self.make_position_setpoint(x, y, self.takeoff_alt))
+            self.setpoint_pub.publish(
+                self.make_position_setpoint(x, y, self.takeoff_alt, self.launch_yaw))
 
         elif self.phase == 'FLY_OUT':
             if self.latest_pos_cmd is not None:
                 self.setpoint_pub.publish(self.pos_cmd_to_setpoint(self.latest_pos_cmd))
             else:
+                # No (valid) planner command: hold where we are, heading included.
                 x, y, z = self.local_pos
-                self.setpoint_pub.publish(self.make_position_setpoint(x, y, z))
+                self.setpoint_pub.publish(self.make_position_setpoint(x, y, z, self.local_yaw))
 
         elif self.phase == 'LANDING':
-            # Hold horizontal position where the vehicle actually is at the
-            # moment LANDING begins (captured once, at phase entry, as
-            # self.landing_xy) and only descend from there. This lands at the
-            # goal/wherever FLY_OUT ended, NOT at launch_xy - using launch_xy
-            # here would fly the vehicle all the way back before descending.
-            # Fallback to current position if landing_xy somehow wasn't
-            # captured (shouldn't happen in practice - set_phase always
-            # captures it when local_pos is available).
+            # Descend straight down at the xy and heading captured at entry.
             x, y = self.landing_xy if self.landing_xy is not None else (self.local_pos[0], self.local_pos[1])
+            yaw = self.landing_yaw if self.landing_yaw is not None else self.local_yaw
             dt = 0.05
             current_z = self.local_pos[2]
             rate = self.descend_rate if current_z > self.landing_slow_alt else self.landing_slow_rate
-            target_z = max(current_z - rate * dt, 0.0)
-            self.setpoint_pub.publish(self.make_position_setpoint(x, y, target_z))
+            if self.landing_ramp_z is None:
+                self.landing_ramp_z = current_z
+            self.landing_ramp_z = max(self.landing_ramp_z - rate * dt, 0.0)
+            self.setpoint_pub.publish(self.make_position_setpoint(x, y, self.landing_ramp_z, yaw))
 
     # ---------- slow loop: the only place phase transitions happen ----------
 
@@ -393,7 +319,6 @@ class SimpleFlightTest(Node):
         if self.phase == 'ABORTED' or self.phase == 'DONE':
             return
 
-        # Odometry staleness is fatal in any active flight phase.
         if self.phase in ('WARMUP', 'ARMED_OFFBOARD', 'TAKEOFF', 'HOVER', 'FLY_OUT', 'LANDING') and self.odom_is_stale():
             self.abort('Odometry feed went stale mid-phase.')
             return
@@ -403,9 +328,6 @@ class SimpleFlightTest(Node):
                 self.try_arm_and_offboard()
             return
 
-        # Unexpected loss of arm/OFFBOARD during an active flight phase means
-        # something else (safety pilot, FC rejection, RC override) has taken
-        # control. Don't fight it - stop and hand back control cleanly.
         if self.phase in ('ARMED_OFFBOARD', 'TAKEOFF', 'HOVER', 'FLY_OUT') and self.offboard_lost():
             if self.phase != 'ARMED_OFFBOARD' or self.time_in_phase() > 2.0:
                 self.abort('Lost armed+OFFBOARD state unexpectedly.')
@@ -421,11 +343,9 @@ class SimpleFlightTest(Node):
 
         if self.phase == 'ARMED_OFFBOARD':
             if self.current_state.armed and self.current_state.mode == 'OFFBOARD':
-                self.get_logger().info('Armed and in OFFBOARD - beginning takeoff climb.')
+                self.get_logger().info(f'Armed and in OFFBOARD - climbing to {self.takeoff_alt}m.')
                 self.set_phase('TAKEOFF')
             elif not self.arm_offboard_requested:
-                # A previous attempt bailed out (services not ready yet) -
-                # this is a non-blocking retry, safe to call from here.
                 self.try_arm_and_offboard()
 
         elif self.phase == 'TAKEOFF':
@@ -443,12 +363,12 @@ class SimpleFlightTest(Node):
         elif self.phase == 'FLY_OUT':
             if self.test_goal is None or self.local_pos is None:
                 return
+            # Horizontal distance only - the planner does not honor goal z.
             dx = self.local_pos[0] - self.test_goal[0]
             dy = self.local_pos[1] - self.test_goal[1]
-            dz = self.local_pos[2] - self.test_goal[2]
-            dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+            dist = math.hypot(dx, dy)
             if dist < self.goal_tolerance:
-                self.get_logger().info(f'Test goal reached (dist={dist:.2f}m). Beginning landing.')
+                self.get_logger().info(f'Test goal reached (horizontal dist={dist:.2f}m). Beginning landing.')
                 self.set_phase('LANDING')
 
         elif self.phase == 'LANDING':
@@ -469,6 +389,9 @@ class SimpleFlightTest(Node):
 
         self.test_goal = (gx, gy, z)
 
+        # NOTE: upstream ego-planner's waypointCallback builds the target as
+        # (goal.x, goal.y, 1.0) - the z below is ignored there. Set takeoff_alt
+        # to the planner's flight height (1.0 m) to avoid a descent at handoff.
         goal = PoseStamped()
         goal.header.frame_id = self.goal_frame_id
         goal.header.stamp = self.get_clock().now().to_msg()
@@ -484,16 +407,13 @@ class SimpleFlightTest(Node):
         if self.arm_offboard_requested:
             return
 
-        # Non-blocking readiness check only. Never call wait_for_service()
-        # here - this method runs from state_machine_cb while the setpoint
-        # timer must keep publishing at 20 Hz without interruption.
         if not self.arming_client.service_is_ready() or not self.set_mode_client.service_is_ready():
             now = time.monotonic()
             if now - self.last_service_retry_log > self.service_retry_interval:
                 self.get_logger().warn(
                     'Arm/set_mode service not ready yet - will keep retrying non-blockingly.')
                 self.last_service_retry_log = now
-            return  # setpoint stream is untouched; we'll just try again next tick
+            return
 
         self.arm_offboard_requested = True
 
@@ -558,9 +478,6 @@ class SimpleFlightTest(Node):
 def main():
     rclpy.init()
     node = SimpleFlightTest()
-    # MultiThreadedExecutor + the setpoint timer's own callback group (set up
-    # in __init__) guarantees the 20 Hz OFFBOARD setpoint stream can never be
-    # starved by a slow or blocking callback elsewhere in the node.
     executor = MultiThreadedExecutor()
     executor.add_node(node)
     try:

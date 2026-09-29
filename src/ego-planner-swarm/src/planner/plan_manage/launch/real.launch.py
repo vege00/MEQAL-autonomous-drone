@@ -10,10 +10,10 @@ from launch.substitutions import PythonExpression
 from launch.conditions import IfCondition, UnlessCondition
 
 def generate_launch_description():
-    # 定义参数的 LaunchConfiguration
-    map_size_x = LaunchConfiguration('map_size_x', default = 42.0)
-    map_size_y = LaunchConfiguration('map_size_y', default = 30.0)
-    map_size_z = LaunchConfiguration('map_size_z', default = 5.0)
+    # 定义参数的 LaunchConfigurati
+    map_size_x = LaunchConfiguration('map_size_x', default = 50.0)
+    map_size_y = LaunchConfiguration('map_size_y', default = 50.0)
+    map_size_z = LaunchConfiguration('map_size_z', default = 50.0)
     odom_topic = LaunchConfiguration('odom_topic', default = '/Odometry_corrected')
     
     # 声明全局参数
