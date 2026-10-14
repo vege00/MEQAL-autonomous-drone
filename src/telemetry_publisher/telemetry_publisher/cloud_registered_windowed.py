@@ -32,7 +32,7 @@ class CloudAggregator(Node):
         self.declare_parameter('cloud_topic', '/cloud_registered')
         self.declare_parameter('odom_topic', '/Odometry_corrected')
         self.declare_parameter('output_topic', '/cloud_registered_windowed')
-        self.declare_parameter('self_exclusion_radius', 1.2)
+        self.declare_parameter('self_exclusion_radius', 1.6)
 
         self.self_exclusion_radius = self.get_parameter('self_exclusion_radius').value
         self.window_seconds = self.get_parameter('window_seconds').value

@@ -35,7 +35,8 @@ setup(
         'flight_manager = telemetry_publisher.flight_manager:main',
         'single_goal_test = telemetry_publisher.single_goal_test:main',
         'simple_flight_test = telemetry_publisher.simple_flight_test:main',
-	'odometry_transformer = telemetry_publisher.odometry_transformer:main',
+	    'odometry_transformer = telemetry_publisher.odometry_transformer:main',
+        'square_flight_test.py = telemetry_publisher.square_flight_test:main',
         ],
     },
 )
